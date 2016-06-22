@@ -44,6 +44,7 @@ static int go_bio_create( BIO *b ) {
 }
 
 static int go_bio_destroy( BIO *b ) {
+	free(BIO_get_data(b));
 	return 0;
 }
 
@@ -94,6 +95,12 @@ static void init_ctx(SSL_CTX *ctx) {
 	SSL_CTX_set_psk_client_callback(ctx,&psk_callback);
 }
 
+static void setGoClientId(BIO* bio, unsigned int clientId) {
+	unsigned int * pId = malloc(sizeof(unsigned int));
+	*pId = clientId;
+	BIO_set_data(bio,pId);
+}
+
 */
 import "C"
 
@@ -114,7 +121,8 @@ import "net"
 
 //export go_conn_bio_write
 func go_conn_bio_write(bio *C.BIO, buf *C.char, num C.int) C.int {
-	client := (*DTLSClient)(C.BIO_get_data(bio))
+
+	client := clients[*(*int32)(C.BIO_get_data(bio))]
 	data := goSliceFromCString(buf, int(num))
 	n, err := client.conn.Write(data)
 	if err != nil && err != io.EOF {
@@ -135,7 +143,7 @@ func go_conn_bio_write(bio *C.BIO, buf *C.char, num C.int) C.int {
 
 //export go_conn_bio_read
 func go_conn_bio_read(bio *C.BIO, buf *C.char, num C.int) C.int {
-	client := (*DTLSClient)(C.BIO_get_data(bio))
+	client := clients[*(*int32)(C.BIO_get_data(bio))]
 	data := goSliceFromCString(buf, int(num))
 	n, err := client.conn.Read(data)
 	if err == nil {
@@ -160,7 +168,7 @@ TESTERR:
 
 //export go_conn_bio_free
 func go_conn_bio_free(bio *C.BIO) C.int {
-	client := (*DTLSClient)(C.BIO_get_data(bio))
+	client := clients[*(*int32)(C.BIO_get_data(bio))]
 	client.Close()
 	if C.int(C.BIO_get_shutdown(bio)) != 0 {
 		C.BIO_set_data(bio, nil)
@@ -173,7 +181,7 @@ func go_conn_bio_free(bio *C.BIO) C.int {
 //export go_psk_callback
 func go_psk_callback(ssl *C.SSL, hint *C.char, identity *C.char, max_identity_len C.uint, psk *C.char, max_psk_len C.uint) C.uint {
 	bio := C.SSL_get_rbio(ssl)
-	client := (*DTLSClient)(C.BIO_get_data(bio))
+	client := clients[*(*int32)(C.BIO_get_data(bio))]
 
 	if client.pskId == nil || client.psk == nil {
 		return 0
@@ -231,12 +239,23 @@ type DTLSClient struct {
 	psk       []byte
 }
 
+var nextId int32 = 0
+
+var clients = make(map[int32]*DTLSClient)
+
 func NewDTLSClient(dtlsCtx *DTLSCtx, conn net.Conn) *DTLSClient {
 	ssl := C.SSL_new(dtlsCtx.ctx)
+
+	id := atomic.AddInt32(&nextId, 1)
+
 	self := DTLSClient{false, 0, C.BIO_new(C.BIO_go()), dtlsCtx.ctx, ssl, conn, nil, nil}
+	clients[id] = &self
+
 	C.SSL_set_bio(self.ssl, self.bio, self.bio)
 
-	C.BIO_set_data(self.bio, unsafe.Pointer(&self))
+	// the ID is used as link between the Go and C lang since sharing GGo pointers is
+	// so the C is going to own the pointer to the id value
+	C.setGoClientId(self.bio, C.uint(id))
 	return &self
 }
 
