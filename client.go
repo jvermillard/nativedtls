@@ -9,7 +9,7 @@ package nativedtls
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include "internal/bio.h"
+#include <internal/bio.h>
 
 extern int go_conn_bio_write(BIO* bio, char* buf, int num);
 extern int go_conn_bio_read(BIO* bio, char* buf, int num);
@@ -81,9 +81,6 @@ static void set_proto_1_2(SSL_CTX *ctx) {
 static unsigned int psk_callback(SSL *ssl, const char *hint,
         char *identity, unsigned int max_identity_len,
         unsigned char *psk, unsigned int max_psk_len) {
-//	sprintf(identity,"Client_identity");
-//	sprintf(psk,"secretPSK");
-//	return strlen("secretPSK");
 	return go_psk_callback(ssl,hint,identity,max_identity_len,(char*)psk,max_psk_len);
 }
 
@@ -197,9 +194,12 @@ func go_psk_callback(ssl *C.SSL, hint *C.char, identity *C.char, max_identity_le
 	return C.uint(copy(targetPsk, client.psk))
 }
 
-func Init() {
+func init() {
 	// low level init of OpenSSL
 	C.init_lib()
+
+	// init server BIO
+	server_bio_method_init()
 }
 
 // Context used for creating a DTLS connection.
@@ -243,6 +243,7 @@ var nextId int32 = 0
 
 var clients = make(map[int32]*DTLSClient)
 
+// Create a DTLSClient implementing the net.Conn interface
 func NewDTLSClient(dtlsCtx *DTLSCtx, conn net.Conn) *DTLSClient {
 	ssl := C.SSL_new(dtlsCtx.ctx)
 
@@ -253,7 +254,7 @@ func NewDTLSClient(dtlsCtx *DTLSCtx, conn net.Conn) *DTLSClient {
 
 	C.SSL_set_bio(self.ssl, self.bio, self.bio)
 
-	// the ID is used as link between the Go and C lang since sharing GGo pointers is
+	// the ID is used as link between the Go and C lang since sharing Go pointers is
 	// so the C is going to own the pointer to the id value
 	C.setGoClientId(self.bio, C.uint(id))
 	return &self
@@ -396,11 +397,6 @@ func (c *DTLSClient) Close() error {
 		}
 	}
 	return nil
-}
-
-type DTLSServer struct {
-	bio *C.BIO
-	ctx *C.SSL_CTX
 }
 
 // Provides a zero copy interface for returning a go slice backed by a c array.

@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-	nativedtls.Init()
 	ctx := nativedtls.NewDTLSContext()
 	if !ctx.SetCipherList("PSK-AES256-CCM8:PSK-AES128-CCM8") {
 		panic("impossible to set cipherlist")
