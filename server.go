@@ -121,6 +121,8 @@ func server_bio_method_init() {
 	C.init_session_bio_method()
 }
 
+// Create a new DTLS context for servers.
+// DTLSContext is were you configure chipersuite and secrets
 func NewServerDTLSContext() *DTLSCtx {
 	ctx := C.SSL_CTX_new(C.DTLSv1_2_server_method())
 	if ctx == nil {
@@ -148,6 +150,7 @@ type DTLSServer struct {
 
 // DTLS session between a client and the server
 type session struct {
+	closed bool
 	addr   net.Addr
 	ssl    *C.SSL
 	bio    *C.BIO
@@ -182,23 +185,22 @@ func (s *DTLSServer) newSession(addr net.Addr) *session {
 
 	// add the PSK callback
 	if s.pskCallback != nil {
-		fmt.Println("callback set")
 		C.set_psk_callback(ssl)
 	} else {
-		fmt.Println("no callback")
+		fmt.Println("no psk callback")
 	}
 
 	// dump ciphers
-	index := C.int(0)
-	for {
-		next := C.SSL_get_cipher_list(ssl, index)
-		if next != nil {
-			fmt.Println("chiper", index, C.GoString(next))
-			index = index + 1
-		} else {
-			break
-		}
-	}
+	//index := C.int(0)
+	//	for {
+	//		next := C.SSL_get_cipher_list(ssl, index)
+	//		if next != nil {
+	//			fmt.Println("chiper", index, C.GoString(next))
+	//			index = index + 1
+	//		} else {
+	//			break
+	//		}
+	//	}
 
 	// create the BIO
 
@@ -271,7 +273,22 @@ func (s *DTLSServer) loop() {
 }
 
 func (s *session) Close() error {
-	// TODO
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	defer func() {
+		C.SSL_free(s.ssl)
+		//TODO??C.SSL_free(s.bio)
+	}()
+
+	ret := C.SSL_shutdown(s.ssl)
+	if int(ret) == 0 {
+		ret = C.SSL_shutdown(s.ssl)
+		if int(ret) != 1 {
+			return s.getError(ret)
+		}
+	}
 	return nil
 }
 
@@ -284,7 +301,7 @@ func (s *session) RemoteAddr() net.Addr {
 }
 
 func (s *session) Read(b []byte) (n int, err error) {
-	// TODO test if closed
+	// TODO test if closed?
 	length := len(b)
 
 	fmt.Println("SSL READ")
@@ -303,7 +320,7 @@ func (s *session) Read(b []byte) (n int, err error) {
 }
 
 func (s *session) Write(b []byte) (int, error) {
-	// TODO test is connected
+	// TODO test is connected ?
 	length := len(b)
 	ret := C.SSL_write(s.ssl, unsafe.Pointer(&b[0]), C.int(length))
 	if err := s.getError(ret); err != nil {
@@ -393,7 +410,8 @@ func go_session_bio_write(bio *C.BIO, buf *C.char, num C.int) C.int {
 
 //export go_session_bio_free
 func go_session_bio_free(bio *C.BIO) C.int {
-	// TODO: we should inform the session is closed (if needed)
+	sess := sessions[*(*int32)(C.BIO_get_data(bio))]
+	sess.Close()
 
 	// some flags magic
 	if C.int(C.BIO_get_shutdown(bio)) != 0 {
@@ -414,9 +432,9 @@ func go_server_psk_callback(ssl *C.SSL, identity *C.char, psk *C.char, max_psk_l
 	}
 
 	// TODO test nil ?
-	goPskId := C.GoString(identity)
+	goPskID := C.GoString(identity)
 
-	serverPsk := sess.server.pskCallback(goPskId)
+	serverPsk := sess.server.pskCallback(goPskID)
 
 	if serverPsk == nil {
 		return 0
@@ -472,5 +490,4 @@ func verify_cookie_callback(ssl *C.SSL, cookie *C.uchar, cookie_len C.uint) C.in
 	} else {
 		return 0
 	}
-
 }

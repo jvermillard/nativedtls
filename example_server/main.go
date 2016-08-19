@@ -5,6 +5,7 @@ import "C"
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/jvermillard/nativedtls"
 )
@@ -36,13 +37,26 @@ func main() {
 	}
 	fmt.Println("session ", session)
 
-	buff := make([]byte, 1500)
-	count, err := session.Read(buff)
+	for {
+		buff := make([]byte, 1500)
+		count, err := session.Read(buff)
 
-	if err != nil {
-		panic(err)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("Rcvd:", string(buff))
+
+		if strings.HasPrefix(string(buff), "quit") {
+			break
+		}
+		fmt.Println(count, err)
+
+		fmt.Println("Send echo")
+
+		session.Write([]byte("echo :D\n"))
 	}
-	fmt.Println("Rcvd:", string(buff))
 
-	fmt.Println(count, err)
+	session.Close()
+
+	fmt.Println("bye")
 }
