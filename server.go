@@ -17,6 +17,8 @@ extern int go_session_bio_free(BIO* bio);
 
 extern unsigned int go_server_psk_callback(SSL *ssl, char *identity, char *psk, unsigned int max_psk_len);
 
+extern int generate_cookie_callback(SSL* ssl, unsigned char* cookie, unsigned int *cookie_len);
+extern int verify_cookie_callback(SSL* ssl, unsigned char* cookie, unsigned int cookie_len);
 
 extern int get_errno(void);
 extern void set_errno(int e);
@@ -70,11 +72,12 @@ static void init_server_ctx(SSL_CTX *ctx) {
 	SSL_CTX_set_min_proto_version(ctx, 0xFEFD); // 1.2
 	SSL_CTX_set_max_proto_version(ctx, 0xFEFD); // 1.2
 //	SSL_CTX_set_read_ahead(ctx, 1);
+	SSL_CTX_set_cookie_generate_cb(ctx, &generate_cookie_callback);
+	SSL_CTX_set_cookie_verify_cb(ctx, &verify_cookie_callback);
+
 }
 
 static BIO_METHOD* BIO_go_session() {
-
-	printf("bio method: %d\n",go_session_bio_method);
 	return go_session_bio_method;
 }
 
@@ -91,12 +94,20 @@ static void set_psk_callback(SSL *ssl) {
 	SSL_set_psk_server_callback(ssl,&server_psk_callback);
 }
 
+static void set_cookie_option(SSL *ssl) {
+	SSL_set_options(ssl, SSL_OP_COOKIE_EXCHANGE);
+}
+
 */
 import "C"
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"sync/atomic"
 	"syscall"
@@ -132,6 +143,7 @@ type DTLSServer struct {
 		sess *session
 		err  error
 	}
+	cookieSecret []byte // the secret used for cookie verification
 }
 
 // DTLS session between a client and the server
@@ -144,10 +156,14 @@ type session struct {
 }
 
 func NewDTLSServer(ctx *DTLSCtx, conn net.PacketConn) *DTLSServer {
+	secret := make([]byte, 32)
+	if n, err := rand.Read(secret); n != 32 || err != nil {
+		panic(err)
+	}
 	server := DTLSServer{false, ctx.ctx, make(map[string]*session), conn, nil, make(chan struct {
 		sess *session
 		err  error
-	})}
+	}), secret}
 
 	return &server
 }
@@ -201,8 +217,9 @@ func (s *DTLSServer) newSession(addr net.Addr) *session {
 	C.setGoSessionId(bio, C.uint(id))
 
 	// this session should start by doing a server handshake
+	C.set_cookie_option(ssl)
 	C.SSL_set_accept_state(ssl)
-
+	C.DTLSv1_listen
 	return &sess
 }
 
@@ -412,4 +429,48 @@ func go_server_psk_callback(ssl *C.SSL, identity *C.char, psk *C.char, max_psk_l
 
 	targetPsk := goSliceFromCString(psk, int(max_psk_len))
 	return C.uint(copy(targetPsk, serverPsk))
+}
+
+//export generate_cookie_callback
+func generate_cookie_callback(ssl *C.SSL, cookie *C.uchar, cookie_len *C.uint) C.int {
+	bio := C.SSL_get_rbio(ssl)
+	sess := sessions[*(*int32)(C.BIO_get_data(bio))]
+
+	mac := hmac.New(sha256.New, sess.server.cookieSecret)
+	mac.Write([]byte(sess.RemoteAddr().String()))
+	cookieValue := mac.Sum(nil)
+
+	if len(cookieValue) >= int(*cookie_len) {
+		fmt.Println("no enough cookie space (should not happen..)")
+		return 0
+	}
+
+	data := goSliceFromUCString(cookie, int(*cookie_len))
+
+	*cookie_len = C.uint(copy(data, cookieValue))
+	return 1
+
+}
+
+//export verify_cookie_callback
+func verify_cookie_callback(ssl *C.SSL, cookie *C.uchar, cookie_len C.uint) C.int {
+	bio := C.SSL_get_rbio(ssl)
+	sess := sessions[*(*int32)(C.BIO_get_data(bio))]
+
+	mac := hmac.New(sha256.New, sess.server.cookieSecret)
+	mac.Write([]byte(sess.RemoteAddr().String()))
+	cookieValue := mac.Sum(nil)
+
+	if len(cookieValue) != int(cookie_len) {
+		return 0
+	}
+
+	data := goSliceFromUCString(cookie, int(cookie_len))
+
+	if bytes.Equal(data, cookieValue) {
+		return 1
+	} else {
+		return 0
+	}
+
 }

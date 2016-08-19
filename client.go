@@ -411,3 +411,16 @@ func goSliceFromCString(cArray *C.char, size int) (cslice []byte) {
 	sliceHeader.Data = uintptr(unsafe.Pointer(cArray))
 	return
 }
+
+// Provides a zero copy interface for returning a go slice backed by a c array.
+func goSliceFromUCString(cArray *C.uchar, size int) (cslice []byte) {
+	//See http://code.google.com/p/go-wiki/wiki/cgo
+	//It turns out it's really easy to
+	//make a string from a *C.char and vise versa.
+	//not so easy to write to a c array.
+	sliceHeader := (*reflect.SliceHeader)((unsafe.Pointer(&cslice)))
+	sliceHeader.Cap = size
+	sliceHeader.Len = size
+	sliceHeader.Data = uintptr(unsafe.Pointer(cArray))
+	return
+}
