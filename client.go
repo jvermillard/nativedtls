@@ -1,8 +1,8 @@
 package nativedtls
 
 /*
-#cgo LDFLAGS: /home/jvermillar/sandbox/openssl/libssl.a /home/jvermillar/sandbox/openssl/libcrypto.a -ldl
-#cgo CFLAGS: -g -Wno-deprecated -I/home/jvermillar/sandbox/openssl/include
+#cgo LDFLAGS: ${SRCDIR}/openssl/libssl.a ${SRCDIR}/openssl/libcrypto.a -ldl
+#cgo CFLAGS: -g -Wno-deprecated -I${SRCDIR}/openssl/include
 
 #include <stdlib.h>
 #include <string.h>

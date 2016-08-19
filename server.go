@@ -1,8 +1,8 @@
 package nativedtls
 
 /*
-#cgo LDFLAGS: /home/jvermillar/sandbox/openssl/libssl.a /home/jvermillar/sandbox/openssl/libcrypto.a -ldl
-#cgo CFLAGS: -g -Wno-deprecated -I/home/jvermillar/sandbox/openssl/include
+#cgo LDFLAGS: ${SRCDIR}/openssl/libssl.a ${SRCDIR}/openssl/libcrypto.a -ldl
+#cgo CFLAGS: -g -Wno-deprecated -I${SRCDIR}/openssl/include
 
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +71,7 @@ static int init_session_bio_method() {
 static void init_server_ctx(SSL_CTX *ctx) {
 	SSL_CTX_set_min_proto_version(ctx, 0xFEFD); // 1.2
 	SSL_CTX_set_max_proto_version(ctx, 0xFEFD); // 1.2
-//	SSL_CTX_set_read_ahead(ctx, 1);
+	SSL_CTX_set_read_ahead(ctx, 1);
 	SSL_CTX_set_cookie_generate_cb(ctx, &generate_cookie_callback);
 	SSL_CTX_set_cookie_verify_cb(ctx, &verify_cookie_callback);
 
@@ -363,7 +363,7 @@ func go_session_bio_read(bio *C.BIO, buf *C.char, num C.int) C.int {
 		return 0
 	}
 	wrote := copy(data, socketData)
-	fmt.Println("session_bio_read done")
+	fmt.Println("session_bio_read done", wrote, "byte")
 
 	return C.int(wrote)
 }

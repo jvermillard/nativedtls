@@ -1,9 +1,5 @@
 package main
 
-/*
-#cgo LDFLAGS: /home/jvermillar/sandbox/openssl/libssl.a /home/jvermillar/sandbox/openssl/libcrypto.a
-#cgo CFLAGS: -g -Wno-deprecated -I/home/jvermillar/sandbox/openssl/include
-*/
 import "C"
 
 import (
