@@ -117,7 +117,6 @@ import (
 
 // init server BIO method
 func server_bio_method_init() {
-	fmt.Println("init session BIO")
 	C.init_session_bio_method()
 }
 
@@ -179,17 +178,13 @@ var sessions = make(map[int32]*session)
 var nextSessionId int32 = 0
 
 func (s *DTLSServer) newSession(addr net.Addr) *session {
-	fmt.Println("create new session")
 	ssl := C.SSL_new(s.ctx)
 	id := atomic.AddInt32(&nextSessionId, 1)
 
 	// add the PSK callback
 	if s.pskCallback != nil {
 		C.set_psk_callback(ssl)
-	} else {
-		fmt.Println("no psk callback")
 	}
-
 	// dump ciphers
 	//index := C.int(0)
 	//	for {
@@ -207,7 +202,7 @@ func (s *DTLSServer) newSession(addr net.Addr) *session {
 	bio := C.BIO_new(C.BIO_go_session())
 
 	if bio == nil {
-		fmt.Println("BIO creation error")
+		return nil
 	}
 	C.SSL_set_bio(ssl, bio, bio)
 
@@ -266,9 +261,7 @@ func (s *DTLSServer) loop() {
 			}{sess: sess, err: nil}
 		}
 		// push the data to the session and wait for more data
-		fmt.Println("push to bio")
 		sess.rcvd <- tmpBuff
-		fmt.Println("push to bio done")
 	}
 }
 
@@ -303,8 +296,6 @@ func (s *session) RemoteAddr() net.Addr {
 func (s *session) Read(b []byte) (n int, err error) {
 	// TODO test if closed?
 	length := len(b)
-
-	fmt.Println("SSL READ")
 
 	ret := C.SSL_read(s.ssl, unsafe.Pointer(&b[0]), C.int(length))
 	fmt.Println("SSL READ done")
@@ -371,7 +362,6 @@ func (s *session) SetWriteDeadline(t time.Time) error {
 func go_session_bio_read(bio *C.BIO, buf *C.char, num C.int) C.int {
 	sess := sessions[*(*int32)(C.BIO_get_data(bio))]
 
-	fmt.Println("session_bio_read")
 	socketData := <-sess.rcvd
 
 	data := goSliceFromCString(buf, int(num))
@@ -380,14 +370,11 @@ func go_session_bio_read(bio *C.BIO, buf *C.char, num C.int) C.int {
 		return 0
 	}
 	wrote := copy(data, socketData)
-	fmt.Println("session_bio_read done", wrote, "byte")
-
 	return C.int(wrote)
 }
 
 //export go_session_bio_write
 func go_session_bio_write(bio *C.BIO, buf *C.char, num C.int) C.int {
-	fmt.Println("write conn")
 	session := sessions[*(*int32)(C.BIO_get_data(bio))]
 	data := goSliceFromCString(buf, int(num))
 	n, err := session.server.conn.WriteTo(data, session.addr)
@@ -404,7 +391,6 @@ func go_session_bio_write(bio *C.BIO, buf *C.char, num C.int) C.int {
 		}
 		return C.int(-1)
 	}
-	fmt.Println("write conn", n)
 	return C.int(n)
 }
 
@@ -441,7 +427,6 @@ func go_server_psk_callback(ssl *C.SSL, identity *C.char, psk *C.char, max_psk_l
 	}
 
 	if len(serverPsk) >= int(max_psk_len) {
-		fmt.Println("PSK too large")
 		return 0
 	}
 
