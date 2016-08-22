@@ -1,12 +1,11 @@
 # nativedtls
-OpenSSL binding for Golang DTLS support
+Golang DTLS library using OpenSSL 1.1.0-pre7-dev.
 
-look at the example directory for usage.
+Look at the example_server and example_client directories for usage.
 
-Support only DTLS 1.2 client connections with PSK
-
-Based on https://github.com/shanemhansen/gossl
+Based on https://github.com/shanemhansen/gossl BIO glue between cgo and go.
 
 Build with OpenSSL 1.1 or master.
 
-Before building, go in the openssl directory, do "./config && make"
+## Compiling
+Before building, go in the openssl sub-directory, do "./config && make"
